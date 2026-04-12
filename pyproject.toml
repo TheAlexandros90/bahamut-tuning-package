@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bahamut-tuning"
+version = "0.1.0"
+description = "Notebook-friendly hyperparameter tuning subsystem for integration inside larger ML libraries."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["machine-learning", "hyperparameter-tuning", "optuna", "scikit-learn", "notebook"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+dependencies = [
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "scikit-learn>=1.3"
+]
+
+[project.optional-dependencies]
+notebook = [
+  "ipython>=8.0",
+  "ipywidgets>=8.0"
+]
+optuna = [
+  "optuna>=3.6"
+]
+xgboost = [
+  "xgboost>=2.0"
+]
+dev = [
+  "build>=1.2",
+  "pytest>=8.0",
+  "twine>=5.0"
+]
+all = [
+  "ipython>=8.0",
+  "ipywidgets>=8.0",
+  "optuna>=3.6",
+  "xgboost>=2.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/TheAlexandros90/bahamut"
+Repository = "https://github.com/TheAlexandros90/bahamut"
+Issues = "https://github.com/TheAlexandros90/bahamut/issues"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
