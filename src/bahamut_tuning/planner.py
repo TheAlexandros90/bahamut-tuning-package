@@ -9,7 +9,7 @@ from .helpers import (
     validate_scoring_for_task,
 )
 from .spaces import available_estimators as resolve_available_estimators
-from .spaces import build_search_space, space_size
+from .spaces import build_search_space, has_continuous_like_params, space_size
 from .types import TuningContext, TuningPlan, TuningSelection
 
 logger = logging.getLogger(__name__)
@@ -56,11 +56,7 @@ class HyperparameterPlanner:
         total_size = space_size(space)
         lower_algorithm = algorithm.lower()
         expensive = any(token in lower_algorithm for token in ("svc", "svr", "xgboost", "gradientboosting"))
-        continuous_like = any(
-            token in param_name.lower()
-            for param_name in space
-            for token in ("alpha", "c", "learning_rate", "gamma", "epsilon", "lambda", "min_child_weight")
-        )
+        continuous_like = has_continuous_like_params(space)
 
         if total_size <= self.small_space_threshold:
             return "grid", f"Small discrete space ({total_size} configs) -> GridSearchCV."

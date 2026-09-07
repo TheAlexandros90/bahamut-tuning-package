@@ -185,6 +185,36 @@ def build_search_space(algorithm: str) -> dict[str, list[Any]]:
     return spaces[algorithm]
 
 
+# Hyperparameters whose candidate grids stand in for a continuous range.
+# Matching is done on the *leaf* name (after the last "__"), never as a
+# substring: the old substring check treated every name containing the
+# letter "c" (e.g. "model__criterion") as continuous.
+CONTINUOUS_PARAM_NAMES = frozenset(
+    {
+        "alpha",
+        "c",
+        "coef0",
+        "epsilon",
+        "gamma",
+        "l1_ratio",
+        "learning_rate",
+        "min_child_weight",
+        "nu",
+        "reg_alpha",
+        "reg_lambda",
+        "tol",
+    }
+)
+
+
+def leaf_param_name(param_name: str) -> str:
+    return str(param_name).split("__")[-1].strip().lower()
+
+
+def has_continuous_like_params(space: dict[str, list[Any]]) -> bool:
+    return any(leaf_param_name(name) in CONTINUOUS_PARAM_NAMES for name in space)
+
+
 def space_size(space: dict[str, list[Any]]) -> int:
     size = 1
     for values in space.values():

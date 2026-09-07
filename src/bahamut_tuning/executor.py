@@ -91,12 +91,49 @@ def resolve_training_data(
     return X, y, None, None, warnings
 
 
+# Scorers whose values live on a bounded, comparable scale (roughly [0, 1] for a
+# usable model). For those, an absolute gap of 0.02 / 0.05 is meaningful.
+# Everything else (neg_mean_squared_error, neg_root_mean_squared_error,
+# neg_mean_absolute_error, max_error, neg_log_loss, ...) is expressed in the
+# units of the target, so only a *relative* gap can be interpreted.
+_BOUNDED_SCORING_TOKENS = (
+    "accuracy",
+    "average_precision",
+    "d2_",
+    "explained_variance",
+    "f1",
+    "jaccard",
+    "precision",
+    "r2",
+    "recall",
+    "roc_auc",
+)
+
+_MODERATE_GAP = 0.02
+_HIGH_GAP = 0.05
+
+
+def scoring_is_bounded(scoring: str) -> bool:
+    """True when the scorer lives on a bounded scale where absolute gaps are readable."""
+
+    lowered = str(scoring).lower()
+    if lowered.startswith("neg_") or "max_error" in lowered:
+        return False
+    return any(token in lowered for token in _BOUNDED_SCORING_TOKENS)
+
+
+def _gap_scale(scores: list[float | None]) -> float:
+    magnitudes = [abs(float(score)) for score in scores if score is not None and np.isfinite(score)]
+    scale = max(magnitudes) if magnitudes else 0.0
+    return scale if scale > 1e-12 else 1.0
+
+
 def _generalization_risk_level(max_gap: float | None) -> str:
     if max_gap is None:
         return "unknown"
-    if max_gap >= 0.05:
+    if max_gap >= _HIGH_GAP:
         return "high"
-    if max_gap >= 0.02:
+    if max_gap >= _MODERATE_GAP:
         return "moderate"
     return "low"
 
@@ -131,9 +168,24 @@ def compute_generalization_diagnostics(
     if best_cv_score is not None and nested_cv_score is not None:
         cv_vs_nested_gap = float(best_cv_score - nested_cv_score)
 
+    bounded = scoring_is_bounded(scoring)
+    scale = 1.0 if bounded else _gap_scale([training_score, best_cv_score, holdout_score, nested_cv_score])
+    gap_basis = "absolute" if bounded else "relative"
+
+    def _normalize(gap: float | None) -> float | None:
+        return None if gap is None else float(gap / scale)
+
+    normalized_train_vs_cv_gap = _normalize(train_vs_cv_gap)
+    normalized_cv_vs_holdout_gap = _normalize(cv_vs_holdout_gap)
+    normalized_cv_vs_nested_gap = _normalize(cv_vs_nested_gap)
+
     comparable_gaps = [
         gap
-        for gap in [train_vs_cv_gap, cv_vs_holdout_gap, cv_vs_nested_gap]
+        for gap in [
+            normalized_train_vs_cv_gap,
+            normalized_cv_vs_holdout_gap,
+            normalized_cv_vs_nested_gap,
+        ]
         if gap is not None and gap > 0
     ]
     max_gap = max(comparable_gaps) if comparable_gaps else 0.0
@@ -142,19 +194,25 @@ def compute_generalization_diagnostics(
     warnings: list[str] = []
     if holdout_score is None:
         warnings.append("No holdout split available; overfitting is being checked only against the CV score.")
-    if train_vs_cv_gap is not None and train_vs_cv_gap >= 0.05:
+    if normalized_train_vs_cv_gap is not None and normalized_train_vs_cv_gap >= _HIGH_GAP:
         warnings.append("Training score is materially higher than the CV score; the tuned model may be overfitting.")
-    if cv_vs_holdout_gap is not None and cv_vs_holdout_gap >= 0.05:
+    if normalized_cv_vs_holdout_gap is not None and normalized_cv_vs_holdout_gap >= _HIGH_GAP:
         warnings.append("CV score is materially higher than the holdout score; the tuned model may be overfitting to cross-validation.")
-    if cv_vs_nested_gap is not None and cv_vs_nested_gap >= 0.05:
+    if normalized_cv_vs_nested_gap is not None and normalized_cv_vs_nested_gap >= _HIGH_GAP:
         warnings.append("CV score is materially higher than the nested CV estimate; model selection may be optimistic.")
+    if not bounded:
+        warnings.append(
+            f"Scorer '{scoring}' is expressed in target units; generalization gaps are reported "
+            f"relative to a score magnitude of {scale:.4g}."
+        )
 
+    basis_note = "absolute score points" if bounded else f"fraction of a {scale:.4g} score magnitude"
     if risk_level == "high":
-        assessment = "High generalization gap detected with the current heuristic thresholds."
+        assessment = f"High generalization gap detected ({max_gap:.4f} measured in {basis_note})."
     elif risk_level == "moderate":
-        assessment = "Moderate generalization gap detected; inspect features, search space, and split strategy."
+        assessment = f"Moderate generalization gap detected ({max_gap:.4f} in {basis_note}); inspect features, search space, and split strategy."
     elif risk_level == "low":
-        assessment = "Generalization gap is currently low under the built-in heuristic thresholds."
+        assessment = f"Generalization gap is currently low ({max_gap:.4f} in {basis_note})."
     else:
         assessment = "Generalization risk could not be fully assessed from the available artifacts."
 
@@ -167,9 +225,15 @@ def compute_generalization_diagnostics(
         "train_vs_cv_gap": train_vs_cv_gap,
         "cv_vs_holdout_gap": cv_vs_holdout_gap,
         "cv_vs_nested_gap": cv_vs_nested_gap,
+        "gap_basis": gap_basis,
+        "score_scale": scale,
+        "normalized_train_vs_cv_gap": normalized_train_vs_cv_gap,
+        "normalized_cv_vs_holdout_gap": normalized_cv_vs_holdout_gap,
+        "normalized_cv_vs_nested_gap": normalized_cv_vs_nested_gap,
+        "max_normalized_gap": max_gap,
         "risk_level": risk_level,
         "assessment": assessment,
-        "thresholds": {"moderate_gap": 0.02, "high_gap": 0.05},
+        "thresholds": {"moderate_gap": _MODERATE_GAP, "high_gap": _HIGH_GAP, "basis": gap_basis},
         "warnings": warnings,
     }
 
@@ -570,7 +634,10 @@ def execute_tuning_search(
         best_params = search.best_params_
         best_cv = float(search.best_score_)
         fitted = search.best_estimator_
-        top_trials = [{"rank": 1, "score": best_cv, "params": best_params}]
+        top_trials = top_configs_from_cv_results(
+            pd.DataFrame(search.cv_results_),
+            limit=5,
+        )
     elif strategy == "random":
         search = RandomizedSearchCV(
             estimator=pipeline,

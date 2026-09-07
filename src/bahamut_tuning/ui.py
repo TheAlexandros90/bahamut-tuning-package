@@ -4,15 +4,18 @@ import html
 from typing import Any
 
 import pandas as pd
-from IPython.display import display
 
 from .helpers import infer_default_scoring, summarize_dataframe_context
 from .types import TuningSelection
 
+# The notebook stack is an optional extra (`bahamut-tuning[notebook]`).
+# Importing the package must never require IPython/ipywidgets to be installed.
 try:
     import ipywidgets as widgets
-except Exception:
+    from IPython.display import display
+except Exception:  # pragma: no cover - exercised only without the notebook extra
     widgets = None
+    display = None
 
 
 _SCORING_OPTIONS = {
@@ -55,8 +58,11 @@ class InteractiveTuningUI:
     """Notebook UI for confirmation, overrides, planning, and execution."""
 
     def __init__(self, workbench: Any) -> None:
-        if widgets is None:
-            raise ImportError("ipywidgets is required for render_ui(). Install bahamut-tuning[notebook].")
+        if widgets is None or display is None:
+            raise ImportError(
+                "render_ui() requires the notebook extra. Install it with "
+                "`pip install bahamut-tuning[notebook]` (ipywidgets + IPython)."
+            )
 
         self.workbench = workbench
         context = self.workbench.context
