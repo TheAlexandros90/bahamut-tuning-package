@@ -33,6 +33,13 @@ class HyperTuneWorkbench:
         self._last_plan = None
         self._last_result = None
 
+    @classmethod
+    def from_bahamut(cls, segments, **kwargs: Any) -> "HyperTuneWorkbench":
+        """Reuse Bahamut partitions with temporal or group-aware CV on train."""
+        from .bridge import context_from_bahamut
+
+        return cls(**context_from_bahamut(segments, **kwargs))
+
     def configure_problem(
         self,
         *,

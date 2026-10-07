@@ -145,3 +145,15 @@ def test_bounded_metrics_keep_absolute_thresholds() -> None:
     assert diagnostics["gap_basis"] == "absolute"
     assert diagnostics["score_scale"] == 1.0
     assert diagnostics["risk_level"] == "high"
+
+
+@pytest.mark.parametrize("cv_score", [None, float("nan"), float("inf")])
+def test_missing_or_invalid_comparison_is_unknown(cv_score) -> None:
+    diagnostics = _diagnostics("accuracy", 0.99, cv_score)
+    assert diagnostics["risk_level"] == "unknown"
+    assert diagnostics["max_normalized_gap"] is None
+
+
+def test_valid_negative_gaps_are_low_risk() -> None:
+    diagnostics = _diagnostics("accuracy", 0.90, 0.92, 0.94)
+    assert diagnostics["risk_level"] == "low"

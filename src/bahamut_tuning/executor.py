@@ -11,7 +11,7 @@ from sklearn.base import BaseEstimator, clone
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.metrics import get_scorer
-from sklearn.model_selection import GridSearchCV, KFold, RandomizedSearchCV, StratifiedKFold, cross_val_score
+from sklearn.model_selection import GridSearchCV, KFold, RandomizedSearchCV, StratifiedKFold, TimeSeriesSplit, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -186,12 +186,14 @@ def compute_generalization_diagnostics(
             normalized_cv_vs_holdout_gap,
             normalized_cv_vs_nested_gap,
         ]
-        if gap is not None and gap > 0
+        if gap is not None and np.isfinite(gap)
     ]
-    max_gap = max(comparable_gaps) if comparable_gaps else 0.0
+    max_gap = max(0.0, max(comparable_gaps)) if comparable_gaps else None
     risk_level = _generalization_risk_level(max_gap)
 
     warnings: list[str] = []
+    if max_gap is None:
+        warnings.append("No finite score comparison is available; generalization risk is unknown.")
     if holdout_score is None:
         warnings.append("No holdout split available; overfitting is being checked only against the CV score.")
     if normalized_train_vs_cv_gap is not None and normalized_train_vs_cv_gap >= _HIGH_GAP:
@@ -257,7 +259,19 @@ def enforce_overfit_policy(generalization: dict[str, Any], overfit_policy: str) 
         )
 
 
-def _nested_outer_cv(task_type: str, outer_folds: int, random_state: int) -> Any:
+def _nested_outer_cv(task_type: str, outer_folds: int, random_state: int, inner_cv: Any = None) -> Any:
+    from .bridge import IndexedGroupKFold
+
+    if isinstance(inner_cv, (TimeSeriesSplit, IndexedGroupKFold, KFold, StratifiedKFold)):
+        outer = deepcopy(inner_cv)
+        outer.n_splits = outer_folds
+        return outer
+    if inner_cv is not None and not isinstance(inner_cv, int):
+        raise ValueError(
+            "Nested CV cannot infer a safe outer splitter from this custom CV. "
+            "Use TimeSeriesSplit, IndexedGroupKFold, KFold or StratifiedKFold, "
+            "or disable nested CV."
+        )
     if task_type == "classification":
         return StratifiedKFold(n_splits=outer_folds, shuffle=True, random_state=random_state)
     return KFold(n_splits=outer_folds, shuffle=True, random_state=random_state)
@@ -348,7 +362,7 @@ def evaluate_nested_validation(
 ) -> dict[str, Any]:
     """Run optional nested CV to get a stricter estimate of tuned-model generalization."""
 
-    outer_cv = _nested_outer_cv(task_type=task_type, outer_folds=outer_folds, random_state=random_state)
+    outer_cv = _nested_outer_cv(task_type=task_type, outer_folds=outer_folds, random_state=random_state, inner_cv=inner_cv)
     search_estimator, strategy_used, warnings = _search_estimator_for_strategy(
         pipeline=pipeline,
         search_space=search_space,
