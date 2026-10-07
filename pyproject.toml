@@ -52,9 +52,9 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/TheAlexandros90/bahamut"
-Repository = "https://github.com/TheAlexandros90/bahamut"
-Issues = "https://github.com/TheAlexandros90/bahamut/issues"
+Homepage = "https://github.com/TheAlexandros90/bahamut-tuning-package"
+Repository = "https://github.com/TheAlexandros90/bahamut-tuning-package"
+Issues = "https://github.com/TheAlexandros90/bahamut-tuning-package/issues"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
