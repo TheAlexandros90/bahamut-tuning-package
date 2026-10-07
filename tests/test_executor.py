@@ -1,10 +1,53 @@
 from __future__ import annotations
 
+from dataclasses import replace
+import sys
+from types import SimpleNamespace
+
 import pytest
 from sklearn.datasets import load_diabetes
 from sklearn.model_selection import KFold, train_test_split
 
 from bahamut_tuning import HyperTuneWorkbench, TuningSelection, enforce_overfit_policy
+from bahamut_tuning.executor import generate_tuning_code
+
+
+@pytest.mark.parametrize("random_state", [17, 42])
+def test_generated_optuna_code_uses_seeded_sampler(monkeypatch, random_state):
+    data = load_diabetes(as_frame=True)
+    tuner = HyperTuneWorkbench(
+        df=data.frame,
+        target=["target"],
+        task_type="regression",
+        selected_algorithm="Ridge",
+    )
+    plan = tuner.plan(
+        TuningSelection(selected_algorithm="Ridge", tuning_strategy="grid")
+    )
+    plan = replace(plan, tuning_strategy="optuna")
+    sampler_token = object()
+    sampler_seeds = []
+
+    def make_sampler(*, seed):
+        sampler_seeds.append(seed)
+        return sampler_token
+
+    def create_study(*, direction, sampler=None):
+        assert direction == "maximize"
+        assert sampler is sampler_token
+        raise RuntimeError("study inspected")
+
+    optuna_stub = SimpleNamespace(
+        samplers=SimpleNamespace(TPESampler=make_sampler),
+        create_study=create_study,
+    )
+    monkeypatch.setitem(sys.modules, "optuna", optuna_stub)
+    code = generate_tuning_code(tuner.context, plan, random_state=random_state, run=True)
+
+    with pytest.raises(RuntimeError, match="study inspected"):
+        exec(code, {"tuner": tuner})
+
+    assert sampler_seeds == [random_state]
 
 
 def test_executor_runs_and_returns_structured_result() -> None:
